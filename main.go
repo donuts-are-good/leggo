@@ -58,9 +58,6 @@ func main() {
 	// make the directory for the proejct
 	os.MkdirAll(dir, 0755)
 
-	// if there are assets desired, create an n+-assets folder
-	assets(scanner, dir)
-
 	// present a summary of the actions to the user
 	summary(name, dir, lp)
 	if strings.ToLower(scanInput(scanner)) != "y" {
@@ -70,13 +67,6 @@ func main() {
 }
 
 func scanInput(s *bufio.Scanner) string { s.Scan(); return s.Text() }
-
-func assets(s *bufio.Scanner, d string) {
-	fmt.Print("Would you like a " + d + "-assets folder? (Y/N) ")
-	if strings.ToLower(scanInput(s)) == "y" {
-		os.MkdirAll(d+"-assets", 0755)
-	}
-}
 
 func setup(n, d, lp string) {
 	if lp == "l" {
@@ -93,7 +83,7 @@ func setup(n, d, lp string) {
 	execCmd("git", "init", d)
 	execCmd("git", "remote", "add", "origin", "https://github.com/"+devname+"/"+n+".git", d)
 	execCmd("git", "add", "-A", ".", ".gitignore", d)
-	createFile(filepath.Join(d, ".gitignore"), fmt.Sprintf(".DS_Store\n.Trash-1000\n%s", n))
+	createFile(filepath.Join(d, ".gitignore"), fmt.Sprintf(".DS_Store\n.Trash-1000\n%s\nBUILDS", n))
 	execCmd("code", ".", d)
 }
 
