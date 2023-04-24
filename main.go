@@ -1,116 +1,85 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 )
 
 var (
 	devname     = "donuts-are-good"
 	projectpath = filepath.Join(os.Getenv("HOME"), "Projects")
-	licensetext = `
-MIT License
-
-Copyright (c) 2023 donuts-are-good <https://github.com/donuts-are-good>
-	
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.`
 )
 
 func main() {
-
-	// listen for input
-	scanner := bufio.NewScanner(os.Stdin)
-
-	// get the program name from the user
-	fmt.Print("Program name: ")
-
-	// the thing we're listening for is a program or lib name
-	name := scanInput(scanner)
-
-	// it's going in ~/Projects/... by deault
-
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "Usage: go run main.go <project name>")
+		os.Exit(1)
+	}
+	name := os.Args[1]
 	dir := filepath.Join(projectpath, name)
-
-	// see if it is a library or program
-	fmt.Print("Library or program (l/p)? ")
-	lp := scanInput(scanner)
-
-	// make the directory for the proejct
-	os.MkdirAll(dir, 0755)
-
-	// present a summary of the actions to the user
-	summary(name, dir, lp)
-	if strings.ToLower(scanInput(scanner)) != "y" {
-		return
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create project directory %s: %v\n", dir, err)
+		os.Exit(1)
 	}
-	setup(name, dir, lp)
+	if err := setup(name, dir); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to setup project %s: %v\n", name, err)
+		os.Exit(1)
+	}
 }
 
-func scanInput(s *bufio.Scanner) string { s.Scan(); return s.Text() }
-
-func setup(n, d, lp string) {
-	if lp == "l" {
-		createFile(filepath.Join(d, n+".go"), "package "+n)
-	} else {
-		createFile(filepath.Join(d, "main.go"), "package main;\n\n func main() { \n\tprintln(\"alive!\")\n}")
+func setup(n, d string) error {
+	if err := createFile(filepath.Join(d, "main.go"), "package main;\n\n func main() { \n\tprintln(\"alive!\")\n}"); err != nil {
+		return fmt.Errorf("failed to create main.go: %w", err)
 	}
-	createFile(filepath.Join(d, "README.md"), "# "+n+"\n")
-	if lp == "p" {
-		createLicense(d)
+	if err := createFile(filepath.Join(d, "README.md"), getReadmeTxt(n)); err != nil {
+		return fmt.Errorf("failed to create README.md: %w", err)
 	}
-	execCmd("go", "mod", "init", "github.com/"+devname+"/"+n, d)
-	execCmd("go", "mod", "tidy", d)
-	execCmd("git", "init", d)
-	execCmd("git", "remote", "add", "origin", "https://github.com/"+devname+"/"+n+".git", d)
-	execCmd("git", "add", "-A", ".", ".gitignore", d)
-	createFile(filepath.Join(d, ".gitignore"), fmt.Sprintf(".DS_Store\n.Trash-1000\n%s\nBUILDS", n))
-	execCmd("code", ".", d)
+	if err := createFile(filepath.Join(d, "LICENSE.md"), licensetext); err != nil {
+		return fmt.Errorf("failed to create LICENSE.md: %w", err)
+	}
+	if err := createFile(filepath.Join(d, ".gitignore"), fmt.Sprintf(".DS_Store\n.Trash-1000\n%s\nBUILDS", n)); err != nil {
+		return fmt.Errorf("failed to create .gitignore: %w", err)
+	}
+	if err := execCmd("go", "mod", "init", "github.com/"+devname+"/"+n, d); err != nil {
+		return fmt.Errorf("failed to initialize go modules: %w", err)
+	}
+	if err := execCmd("go", "mod", "tidy", d); err != nil {
+		return fmt.Errorf("failed to tidy go modules: %w", err)
+	}
+	if err := execCmd("git", "init", d); err != nil {
+		return fmt.Errorf("failed to initialize git repository: %w", err)
+	}
+	if err := execCmd("git", "remote", "add", "origin", "https://github.com/"+devname+"/"+n+".git", d); err != nil {
+		return fmt.Errorf("failed to add git remote: %w", err)
+	}
+	if err := execCmd("git", "add", "-A", ".", ".gitignore", d); err != nil {
+		return fmt.Errorf("failed to add files to git repository: %w", err)
+	}
+	if err := execCmd("code", ".", d); err != nil {
+		return fmt.Errorf("failed to open project in Visual Studio Code: %w", err)
+	}
+	return nil
 }
 
-func execCmd(name string, arg ...string) {
-	cmd := exec.Command(name, arg[1:]...)
+func execCmd(name string, arg ...string) error {
+	cmd := exec.Command(name, arg...)
 	cmd.Dir = arg[0]
-	cmd.Run()
-}
-
-func createFile(p, c string) { f, _ := os.Create(p); f.WriteString(c); f.Close() }
-
-func createLicense(d string) {
-
-	createFile(filepath.Join(d, "LICENSE.md"), licensetext)
-}
-
-func summary(n, d, lp string) {
-	fmt.Printf("Actions:\n1. Create dir: %s\n2. Init Go mod\n3. Init Git repo\n4. Create %s\n5. Create README.md\n", d, fileType(lp))
-	if lp == "p" {
-		fmt.Println("6. Create LICENSE.md (MIT License)")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run command %q: %w", cmd.String(), err)
 	}
-	fmt.Println("7. Open project in Visual Studio Code\n\n Press `y` and then enter if this is correct")
+	return nil
 }
 
-func fileType(lp string) string {
-	if lp == "l" {
-		return "library.go"
+func createFile(p, c string) error {
+	f, err := os.Create(p)
+	if err != nil {
+		return fmt.Errorf("failed to create file %s: %w", p, err)
 	}
-	return "main.go"
+	defer f.Close()
+	if _, err := f.WriteString(c); err != nil {
+		return fmt.Errorf("failed to write to file %s: %w", p, err)
+	}
+	return nil
 }
